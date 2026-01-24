@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photon Typer.io</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto+Mono:wght@400;700&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050510;
+            color: white;
+            font-family: 'Roboto Mono', monospace;
+            user-select: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: radial-gradient(circle at center, #1a1a2e 0%, #000000 100%);
+        }
+
+        canvas {
+            box-shadow: 0 0 50px rgba(0, 255, 255, 0.1);
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .stat-box {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 5px;
+            backdrop-filter: blur(5px);
+        }
+
+        h1 { margin: 0; font-family: 'Orbitron', sans-serif; font-size: 24px; text-transform: uppercase; }
+        p { margin: 5px 0 0 0; font-size: 14px; opacity: 0.8; }
+
+        #start-screen, #game-over-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            text-align: center;
+        }
+
+        .hidden { display: none !important; }
+
+        button {
+            background: linear-gradient(45deg, #00d2ff, #3a7bd5);
+            border: none;
+            padding: 15px 40px;
+            color: white;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 20px;
+            cursor: pointer;
+            margin-top: 20px;
+            border-radius: 30px;
+            box-shadow: 0 0 15px #00d2ff;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover { transform: scale(1.05); box-shadow: 0 0 25px #00d2ff; }
+
+        .color-cyan { color: #00ffff; text-shadow: 0 0 10px #00ffff; }
+        .color-magenta { color: #ff00ff; text-shadow: 0 0 10px #ff00ff; }
+        .color-yellow { color: #ffff00; text-shadow: 0 0 10px #ffff00; }
+
+        #current-word-display {
+            position: absolute;
+            bottom: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 32px;
+            text-shadow: 0 0 20px currentColor;
+            pointer-events: none;
+            z-index: 5;
+            transition: color 0.3s;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- UI Overlay -->
+    <div id="ui-layer">
+        <div class="stat-box">
+            <h1 id="score-display">Score: 0</h1>
+        </div>
+        <div class="stat-box" style="text-align: right;">
+            <h1 id="health-display">Intégrité: 100%</h1>
+            <p id="color-display">Couleur actuelle: <span class="color-cyan">CYAN</span></p>
+        </div>
+    </div>
+
+    <div id="current-word-display"></div>
+
+    <!-- Start Screen -->
+    <div id="start-screen">
+        <h1 style="font-size: 60px; color: #fff; text-shadow: 0 0 20px #00d2ff; margin-bottom: 10px;">PHOTON TYPER.IO</h1>
+        <p style="font-size: 20px; max-width: 600px; line-height: 1.5;">
+            Tu es un faisceau de lumière.<br>
+            Écris les mots sur les obstacles pour les détruire.<br>
+            <br>
+            <span class="color-cyan">BONUS :</span> Écris les mots de la même couleur que toi.<br>
+            <span class="color-magenta">ÉVITE :</span> Les obstacles que tu ne tapes pas à temps.
+        </p>
+        <button onclick="startGame()">INITIALISER LA SEQUENCE</button>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="game-over-screen" class="hidden">
+        <h1 style="font-size: 50px; color: #ff3333; text-shadow: 0 0 20px red;">SIGNAL PERDU</h1>
+        <p>Score Final : <span id="final-score" style="font-weight: bold; font-size: 24px;">0</span></p>
+        <p id="high-score-display">Meilleur Score : 0</p>
+        <button onclick="resetGame()">RECHARGER LE SYSTÈME</button>
+    </div>
+</div>
+
+<script>
+    /**
+     * CONFIGURATION & VARIABLES
+     */
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Dimensions
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    // Mots du dictionnaire (Tech/Espace)
+    const wordList = [
+        "PHOTON", "LUMIERE", "VITESSE", "TUNNEL", "NEON", "FLUX", "DATA", "CODE",
+        "CUBE", "LASER", "SONIC", "RAYON", "PIXEL", "VECTOR", "MATRIX", "GLITCH",
+        "CYBER", "SPACE", "VOID", "PULSE", "WAVE", "NODE", "LINK", "CORE", "SYSTEM",
+        "SHIELD", "BOOST", "POWER", "ENERGY", "ZOOM", "FLASH", "DASH", "GLOW",
+        "FUTUR", "ROBOT", "ANDROID", "ALIEN", "STAR", "ORBIT", "GRAVITY", "TIME"
+    ];
+
+    const colors = {
+        CYAN: { name: 'CYAN', code: '#00ffff', cssClass: 'color-cyan' },
+        MAGENTA: { name: 'MAGENTA', code: '#ff00ff', cssClass: 'color-magenta' },
+        YELLOW: { name: 'JAUNE', code: '#ffff00', cssClass: 'color-yellow' }
+    };
+    const colorKeys = Object.keys(colors);
+
+    // État du jeu
+    let gameState = {
+        isPlaying: false,
+        score: 0,
+        health: 100,
+        speed: 3,
+        playerColorKey: 'CYAN',
+        colorTimer: 0,
+        activeWords: [], // { word, x, y, colorKey, completedChars }
+        particles: [],
+        lastSpawnTime: 0,
+        spawnRate: 2000, // ms
+        targetWord: null // Le mot sur lequel le joueur tape actuellement
+    };
+
+    let highScore = localStorage.getItem('photonTyperHighScore') || 0;
+
+    /**
+     * INITIALISATION
+     */
+    window.addEventListener('resize', () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    });
+
+    window.addEventListener('keydown', handleInput);
+
+    function startGame() {
+        document.getElementById('start-screen').classList.add('hidden');
+        resetGameState();
+        gameState.isPlaying = true;
+        requestAnimationFrame(gameLoop);
+    }
+
+    function resetGame() {
+        document.getElementById('game-over-screen').classList.add('hidden');
+        startGame();
+    }
+
+    function resetGameState() {
+        gameState.score = 0;
+        gameState.health = 100;
+        gameState.speed = 3;
+        gameState.activeWords = [];
+        gameState.particles = [];
+        gameState.targetWord = null;
+        gameState.playerColorKey = colorKeys[Math.floor(Math.random() * colorKeys.length)];
+        gameState.spawnRate = 2000;
+        updateUI();
+    }
+
+    /**
+     * BOUCLE DE JEU
+     */
+    function gameLoop(timestamp) {
+        if (!gameState.isPlaying) return;
+
+        ctx.fillStyle = 'rgba(5, 5, 16, 0.3)'; // Effet de traînée (trails)
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Dessin du fond (Tunnel Effect)
+        drawTunnelEffect();
+
+        updateLogic(timestamp);
+        drawEntities();
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    function updateLogic(timestamp) {
+        // 1. Gestion de la couleur du joueur (Changement automatique)
+        gameState.colorTimer += 16; // approx 60fps
+        if (gameState.colorTimer > 5000) { // Toutes les 5 secondes
+            gameState.colorTimer = 0;
+            cyclePlayerColor();
+        }
+
+        // 2. Spawner les mots
+        if (timestamp - gameState.lastSpawnTime > gameState.spawnRate) {
+            spawnObstacle();
+            gameState.lastSpawnTime = timestamp;
+            // Accélérer légèrement
+            gameState.spawnRate = Math.max(800, gameState.spawnRate - 10);
+            gameState.speed += 0.05;
+        }
+
+        // 3. Déplacer les mots
+        gameState.activeWords.forEach((obj, index) => {
+            obj.y += gameState.speed;
+
+            // Collision avec le bas (Game Over)
+            if (obj.y > canvas.height - 50) {
+                takeDamage(20);
+                createExplosion(obj.x, canvas.height - 50, colors[obj.colorKey].code);
+                gameState.activeWords.splice(index, 1);
+                if (gameState.targetWord === obj) gameState.targetWord = null;
+            }
+        });
+
+        // 4. Particules
+        gameState.particles.forEach((p, index) => {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life -= 0.02;
+            if (p.life <= 0) gameState.particles.splice(index, 1);
+        });
+
+        // 5. Check Game Over
+        if (gameState.health <= 0) {
+            gameOver();
+        }
+    }
+
+    /**
+     * RENDU GRAPHIQUE
+     */
+    function drawTunnelEffect() {
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        
+        // Lignes verticales qui bougent
+        const centerX = canvas.width / 2;
+        for (let i = -5; i <= 5; i++) {
+            let x = centerX + (i * 150);
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canvas.height);
+            ctx.stroke();
+        }
+
+        // Lignes horizontales qui "descendent" pour simuler la vitesse
+        let offset = (Date.now() * (gameState.speed / 10)) % 100;
+        for (let y = offset; y < canvas.height; y += 100) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
+            ctx.stroke();
+        }
+    }
+
+    function drawEntities() {
+        // Dessiner le joueur (Faisceau de lumière en bas)
+        const playerColor = colors[gameState.playerColorKey].code;
+        ctx.shadowBlur = 30;
+        ctx.shadowColor = playerColor;
+        ctx.fillStyle = playerColor;
+        
+        // Forme du vaisseau (Triangle simple)
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2, canvas.height - 20);
+        ctx.lineTo(canvas.width / 2 - 30, canvas.height);
+        ctx.lineTo(canvas.width / 2 + 30, canvas.height);
+        ctx.fill();
+
+        ctx.shadowBlur = 0; // Reset shadow
+
+        // Dessiner les obstacles (Mots)
+        gameState.activeWords.forEach(obj => {
+            const color = colors[obj.colorKey].code;
+            const isTarget = gameState.targetWord === obj;
+
+            // Boite de fond
+            ctx.fillStyle = isTarget ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.5)';
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            
+            // Dessin rect
+            const textWidth = ctx.measureText(obj.word).width;
+            const boxW = textWidth + 40;
+            ctx.fillRect(obj.x - boxW/2, obj.y - 20, boxW, 40);
+            ctx.strokeRect(obj.x - boxW/2, obj.y - 20, boxW, 40);
+
+            // Texte
+            ctx.font = 'bold 20px "Roboto Mono"';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            // Partie tapée vs restante
+            const completedStr = obj.word.substring(0, obj.completedChars);
+            const remainingStr = obj.word.substring(obj.completedChars);
+            
+            const totalW = ctx.measureText(obj.word).width;
+            const completedW = ctx.measureText(completedStr).width;
+            const startX = obj.x - (totalW / 2);
+
+            // Texte déjà tapé (grisé ou blanc)
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(completedStr, startX + completedW/2, obj.y);
+
+            // Texte restant (Couleur de l'obstacle)
+            ctx.fillStyle = color;
+            const remainingW = ctx.measureText(remainingStr).width;
+            ctx.fillText(remainingStr, startX + completedW + remainingW/2, obj.y);
+        });
+
+        // Dessiner les particules
+        gameState.particles.forEach(p => {
+            ctx.globalAlpha = p.life;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        });
+    }
+
+    /**
+     * LOGIQUE DE JEU
+     */
+    function spawnObstacle() {
+        const word = wordList[Math.floor(Math.random() * wordList.length)];
+        // Position aléatoire (mais centré pour éviter les bords)
+        const x = (canvas.width / 2) + (Math.random() * (canvas.width * 0.6) - (canvas.width * 0.3));
+        const colorKey = colorKeys[Math.floor(Math.random() * colorKeys.length)];
+
+        gameState.activeWords.push({
+            word: word,
+            x: x,
+            y: -50,
+            colorKey: colorKey,
+            completedChars: 0
+        });
+    }
+
+    function handleInput(e) {
+        if (!gameState.isPlaying) return;
+
+        const key = e.key.toUpperCase();
+
+        // Si on a pas de cible, on cherche un mot qui commence par cette lettre
+        if (gameState.targetWord === null) {
+            // Trouver le mot le plus bas qui commence par la touche
+            const candidates = gameState.activeWords.filter(obj => obj.word.startsWith(key));
+            
+            if (candidates.length > 0) {
+                // Prendre le plus proche du bas (Y le plus grand)
+                candidates.sort((a, b) => b.y - a.y);
+                gameState.targetWord = candidates[0];
+                gameState.targetWord.completedChars = 1; // 1ere lettre tapée
+                playSound('type');
+                updateTargetDisplay();
+            }
+        } else {
+            // On continue le mot courant
+            const target = gameState.targetWord;
+            const nextChar = target.word[target.completedChars];
+
+            if (key === nextChar) {
+                target.completedChars++;
+                playSound('type');
+                updateTargetDisplay();
+
+                // Mot fini ?
+                if (target.completedChars === target.word.length) {
+                    wordCompleted(target);
+                }
+            } else {
+                // Erreur de frappe ? (Optionnel: pénalité ou reset du mot)
+                // Pour la fluidité, on ignore juste la touche ou on fait un petit son d'erreur
+                playSound('error');
+            }
+        }
+    }
+
+    function wordCompleted(targetObj) {
+        // Score
+        const isColorMatch = targetObj.colorKey === gameState.playerColorKey;
+        const points = isColorMatch ? 50 : 10;
+        const bonusText = isColorMatch ? "MATCH!" : "";
+        
+        gameState.score += points;
+        
+        // Feedback visuel
+        createExplosion(targetObj.x, targetObj.y, colors[targetObj.colorKey].code);
+        playSound('success');
+        
+        // Retirer le mot
+        gameState.activeWords = gameState.activeWords.filter(obj => obj !== targetObj);
+        gameState.targetWord = null;
+        document.getElementById('current-word-display').innerText = "";
+
+        updateUI();
+    }
+
+    function cyclePlayerColor() {
+        const currentIndex = colorKeys.indexOf(gameState.playerColorKey);
+        const nextIndex = (currentIndex + 1) % colorKeys.length;
+        gameState.playerColorKey = colorKeys[nextIndex];
+        playSound('powerup');
+        updateUI();
+    }
+
+    function takeDamage(amount) {
+        gameState.health -= amount;
+        updateUI();
+        // Screen shake simple
+        canvas.style.transform = `translate(${Math.random()*10-5}px, ${Math.random()*10-5}px)`;
+        setTimeout(() => canvas.style.transform = 'translate(0,0)', 100);
+    }
+
+    function createExplosion(x, y, color) {
+        for (let i = 0; i < 15; i++) {
+            gameState.particles.push({
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 10,
+                vy: (Math.random() - 0.5) * 10,
+                life: 1.0,
+                color: color,
+                size: Math.random() * 4 + 1
+            });
+        }
+    }
+
+    function updateUI() {
+        document.getElementById('score-display').innerText = `Score: ${gameState.score}`;
+        
+        const healthEl = document.getElementById('health-display');
+        healthEl.innerText = `Intégrité: ${gameState.health}%`;
+        healthEl.style.color = gameState.health < 30 ? '#ff3333' : '#ffffff';
+
+        const colorInfo = colors[gameState.playerColorKey];
+        const colorEl = document.getElementById('color-display');
+        colorEl.innerHTML = `Couleur: <span class="${colorInfo.cssClass}">${colorInfo.name}</span>`;
+        
+        // Changer la couleur de l'indicateur de mot en bas
+        document.getElementById('current-word-display').style.color = colorInfo.code;
+        document.getElementById('current-word-display').style.textShadow = `0 0 20px ${colorInfo.code}`;
+    }
+
+    function updateTargetDisplay() {
+        if (gameState.targetWord) {
+            const word = gameState.targetWord.word;
+            const completed = word.substring(0, gameState.targetWord.completedChars);
+            const remaining = word.substring(gameState.targetWord.completedChars);
+            
+            document.getElementById('current-word-display').innerHTML = 
+                `<span style="color:white">${completed}</span>${remaining}`;
+        }
+    }
+
+    function gameOver() {
+        gameState.isPlaying = false;
+        
+        if (gameState.score > highScore) {
+            highScore = gameState.score;
+            localStorage.setItem('photonTyperHighScore', highScore);
+        }
+
+        document.getElementById('final-score').innerText = gameState.score;
+        document.getElementById('high-score-display').innerText = `Meilleur Score : ${highScore}`;
+        document.getElementById('game-over-screen').classList.remove('hidden');
+    }
+
+    // Effets sonores simulés (Oscillateur Web Audio API) pour éviter les fichiers externes
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    function playSound(type) {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        if (type === 'type') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.1);
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.1);
+        } else if (type === 'error') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.2);
+        } else if (type === 'success') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+            osc.frequency.linearRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.2);
+        } else if (type === 'powerup') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+            osc.frequency.linearRampToValueAtTime(600, audioCtx.currentTime + 0.3);
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.3);
+        }
+    }
+
+</script>
+
+</body>
+</html>
